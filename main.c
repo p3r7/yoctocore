@@ -107,7 +107,8 @@ void timer_callback_sample_knob(bool on, int user_data) {
     int16_t val_changed =
         KnobChange_update(&pool_knobs[i], MCP3208_read(&mcp3208, i, false));
     if (val_changed != -1) {
-      printf("Knob %d: %d\n", i, val_changed);
+        printf("Knob %d: %de\n", i, val_changed);
+        w_handle_knob(i+1, val_changed);
     }
   }
 }
@@ -749,6 +750,9 @@ int main() {
           // process button press
           Out *out = &yocto.out[i];
           Config *config = &yocto.config[yocto.i][i];
+
+          w_handle_key(i+1, val);
+
           // check mode
           switch (config->mode) {
             case MODE_ENVELOPE:

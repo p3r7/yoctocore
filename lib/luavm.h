@@ -20,6 +20,7 @@ int _unlink(const char *pathname) {
 #endif
 //
 #include "lua_globals.h"
+#include "weaver.h"
 
 lua_State *L;
 
@@ -55,6 +56,8 @@ int luaInit() {
   L = luaL_newstate();  // Create a new Lua state
   luaL_openlibs(L);     // Open standard libraries
 
+  // lua/c glue
+  w_init();
   // Load Lua script from embedded string
   if (luaL_loadbuffer(L, (const char *)globals_lua, globals_lua_len,
                       "embedded_script") != LUA_OK) {

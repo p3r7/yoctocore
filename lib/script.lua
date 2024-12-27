@@ -1,6 +1,14 @@
+
+-- ------------------------------------------------------------------------
+-- core
+
 function random_number()
     return math.random(100, 150)
 end
+
+
+-- ------------------------------------------------------------------------
+-- envs
 
 function new_env(code)
     local env = {}
@@ -28,6 +36,29 @@ end
 
 function env_main(i)
     return envs[i].main()
+end
+
+
+-- ------------------------------------------------------------------------
+
+_yocto = _yocto or {}
+
+_yocto.keys  = {0, 0, 0, 0, 0, 0, 0, 0, 0}
+_yocto.knobs = {0, 0, 0, 0, 0, 0, 0, 0, 0}
+
+-- key callback
+_yocto.key = function(n,z)
+  _yocto.keys[n] = z
+  if envs[n].key then
+    envs[n].key(z)
+  end
+end
+-- enc knob
+_yocto.knob = function(n,val)
+  _yocto.knobs[n] = val
+  if envs[n].knob then
+    envs[n].knob(val)
+  end
 end
 
 math.randomseed(os.time())
