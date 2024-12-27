@@ -58,6 +58,7 @@ int luaInit() {
 
   // lua/c glue
   w_init();
+
   // Load Lua script from embedded string
   if (luaL_loadbuffer(L, (const char *)globals_lua, globals_lua_len,
                       "embedded_script") != LUA_OK) {

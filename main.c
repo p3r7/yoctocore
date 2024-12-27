@@ -61,6 +61,7 @@ static const uint32_t PIN_DCDC_PSM_CTRL = 23;
 #include "lib/knob_change.h"
 #include "lib/libmidi.h"
 #include "lib/luavm.h"
+#include "lib/weaver.h"
 #include "lib/mcp3208.h"
 #include "lib/memusage.h"
 #include "lib/pcg_basic.h"
@@ -109,6 +110,7 @@ void timer_callback_sample_knob(bool on, int user_data) {
     if (val_changed != -1) {
         printf("Knob %d: %de\n", i, val_changed);
         w_handle_knob(i+1, val_changed);
+        // w_handle_knob((const int)(i+1), (const int)val_changed);
     }
   }
 }
@@ -707,6 +709,9 @@ int main() {
   // runlua();
   // print_memory_usage();
   // sleep_ms(2000);
+
+  luaInit();
+
   uint32_t start_time_us = time_us_32();
 
   while (true) {
@@ -752,6 +757,7 @@ int main() {
           Config *config = &yocto.config[yocto.i][i];
 
           w_handle_key(i+1, val);
+          // w_handle_key((const int)(i+1), (const int)val);
 
           // check mode
           switch (config->mode) {
