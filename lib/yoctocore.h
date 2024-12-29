@@ -14,14 +14,15 @@
 
 #define MODE_NOTE 0
 #define MODE_ENVELOPE 1
-#define MODE_KEY_PRESSURE 2
-#define MODE_CONTROL_CHANGE 3
-#define MODE_PROGRAM_CHANGE 4
-#define MODE_CHANNEL_PRESSURE 5
-#define MODE_PITCH_BEND 6
-#define MODE_CLOCK 7
-#define MODE_LFO 8
-#define MODE_CODE 9
+#define MODE_GATE 2
+#define MODE_KEY_PRESSURE 3
+#define MODE_CONTROL_CHANGE 4
+#define MODE_PROGRAM_CHANGE 5
+#define MODE_CHANNEL_PRESSURE 6
+#define MODE_PITCH_BEND 7
+#define MODE_CLOCK 8
+#define MODE_LFO 9
+#define MODE_CODE 10
 
 #define PARAM_SCENE 274204627
 #define PARAM_MODE 2090515018
@@ -400,6 +401,10 @@ float Yoctocore_get(Yoctocore *self, uint8_t scene, uint8_t output,
     default:
       return -1000;
   }
+}
+
+void Yoctocore_schedule_save(Yoctocore *self) {
+  self->debounce_save = to_ms_since_boot(get_absolute_time());
 }
 
 bool Yoctocore_save(Yoctocore *self, uint32_t current_time) {

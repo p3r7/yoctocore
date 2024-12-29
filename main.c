@@ -119,9 +119,10 @@ uint8_t gammaCorrectUint8_t(float value) {
   return roundf(255.0f * powf(value, 0.8f));
 }
 
-const uint8_t const_colors[10][3] = {
+const uint8_t const_colors[11][3] = {
     {160, 160, 160},  // White
     {255, 0, 0},      // Red
+    {255, 0, 0},      // Red (gate)
     {255, 74, 0},     // Orange
     {250, 175, 0},    // Yellow
     {173, 255, 47},   // Yellow-green
@@ -209,7 +210,7 @@ void timer_callback_ws2812(bool on, int user_data) {
     if (out->tuning && blink_on) {
       WS2812_fill(&ws2812, leds_second_8[i - 8] + 8, 0, 0, 0);
     } else {
-      uint8_t brightness = 20;
+      uint8_t brightness = 80;
       WS2812_fill(&ws2812, leds_second_8[i - 8] + 8,
                   const_colors[config->mode][0] * brightness / 100,
                   const_colors[config->mode][1] * brightness / 100,
@@ -264,11 +265,18 @@ void midi_note_off(int channel, int note) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_ENVELOPE && config->linked_to > 0) {
+    if (config->linked_to > 0) {
       if (outs_with_note_change[config->linked_to - 1]) {
-        // trigger the envelope
-        printf("[out%d] env_ff linked to out%d\n", i + 1, config->linked_to);
-        ADSR_gate(&out->adsr, 0, ct);
+        if (config->mode == MODE_ENVELOPE) {
+          // trigger the envelope
+          printf("[out%d] env_off linked to out%d\n", i + 1, config->linked_to);
+          ADSR_gate(&out->adsr, 0, ct);
+        } else if (config->mode == MODE_GATE) {
+          // trigger the gate
+          printf("[out%d] gate_off linked to out%d\n", i + 1,
+                 config->linked_to);
+          out->voltage_set = config->min_voltage;
+        }
       }
     }
   }
@@ -332,11 +340,19 @@ void midi_note_on(int channel, int note, int velocity) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_ENVELOPE && config->linked_to > 0) {
+    if (config->linked_to > 0) {
       if (outs_with_note_change[config->linked_to - 1]) {
-        // trigger the envelope
-        printf("[out%d] env_on linked to out%d\n", i + 1, config->linked_to);
-        ADSR_gate(&out->adsr, 1, ct);
+        if (config->mode == MODE_ENVELOPE) {
+          // trigger the envelope
+          printf("[out%d] env_on linked to out%d\n", i + 1, config->linked_to);
+          // set the max level to scale with the velocity
+          out->adsr.max = linlin((float)velocity, 0.0f, 127.0f, 0.0f, 1.0f);
+          ADSR_gate(&out->adsr, 1, ct);
+        } else if (config->mode == MODE_GATE) {
+          // trigger the gate
+          printf("[out%d] gate_on linked to out%d\n", i + 1, config->linked_to);
+          out->voltage_set = config->max_voltage;
+        }
       }
     }
   }
@@ -344,16 +360,23 @@ void midi_note_on(int channel, int note, int velocity) {
 
 void midi_cc(int channel, int cc, int value) {
   channel++;  // 1-indexed
-  // printf("ch=%d cc=%d val=%d\n", channel, cc, value);
+  printf("ch=%d cc=%d val=%d (%d)\n", channel, cc, value, button_values[0]);
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_CONTROL_CHANGE &&
-        config->midi_channel == channel && config->midi_cc == cc) {
-      // set the voltage
-      out->voltage_set =
-          linlin(value, 0, 127, config->min_voltage, config->max_voltage);
-      printf("[cc%d] %f\n", i + 1, out->voltage_current);
+    if (config->mode == MODE_CONTROL_CHANGE) {
+      if (config->midi_channel == channel && config->midi_cc == cc) {
+        // set the voltage
+        out->voltage_set =
+            linlin(value, 0, 127, config->min_voltage, config->max_voltage);
+        printf("[cc%d] %f\n", i + 1, out->voltage_current);
+      } else if (button_values[i]) {
+        // listen and set the channel and cc
+        yocto.config[yocto.i][i].midi_channel = channel;
+        yocto.config[yocto.i][i].midi_cc = cc;
+        // save the config
+        Yoctocore_schedule_save(&yocto);
+      }
     }
   }
 }
@@ -474,26 +497,27 @@ void midi_event_note_off(char chan, char data1, char data2) {
 }
 
 void midi_event_control_change(char chan, char data1, char data2) {
-  printf("midi_event_control_change: %d %d %d\n", chan, data1, data2);
+  // printf("midi_event_control_change: %d %d %d\n", chan, data1, data2);
+  midi_cc(chan, data1, data2);
 }
 
 void midi_event_program_change(char chan, char data1, char data2) {
-  printf("midi_event_program_change: %d %d %d\n", chan, data1, data2);
+  // printf("midi_event_program_change: %d %d %d\n", chan, data1, data2);
   midi_program_change(chan, data1);
 }
 
 void midi_event_pitch_bend(char chan, char data1, char data2) {
-  printf("midi_event_pitch_bend: %d %d %d\n", chan, data1, data2);
+  // printf("midi_event_pitch_bend: %d %d %d\n", chan, data1, data2);
   midi_pitch_bend(chan, data1 + (data2 << 7));
 }
 
 void midi_event_channel_pressure(char chan, char data1, char data2) {
-  printf("midi_event_channel_pressure: %d %d %d\n", chan, data1, data2);
+  // printf("midi_event_channel_pressure: %d %d %d\n", chan, data1, data2);
   midi_channel_pressure(chan, data1);
 }
 
 void midi_event_key_pressure(char chan, char data1, char data2) {
-  printf("midi_event_key_pressure: %d %d %d\n", chan, data1, data2);
+  // printf("midi_event_key_pressure: %d %d %d\n", chan, data1, data2);
   midi_key_pressure(chan, data1, data2);
 }
 
@@ -765,6 +789,11 @@ int main() {
               // trigger the envelope
               ADSR_gate(&out->adsr, val, ct);
               break;
+            case MODE_GATE:
+              // set the voltage
+              out->voltage_set =
+                  val ? config->max_voltage : config->min_voltage;
+              break;
             case MODE_NOTE:
               if (button_shift && val) {
                 // toggle tuning mode
@@ -797,6 +826,7 @@ int main() {
       Out *out = &yocto.out[i];
       Config *config = &yocto.config[yocto.i][i];
       float knob_val = (float)KnobChange_get(&pool_knobs[i]);
+      bool button_val = button_values[i];
       // check mode
       // make sure modes are up to date
       if (config->mode == MODE_CLOCK || config->mode == MODE_CODE) {
@@ -831,8 +861,8 @@ int main() {
           break;
         case MODE_NOTE:
           // mode pitch will set the voltage based on midi note
-          // check if knob was turned
-          if (knob_val != -1) {
+          // button + knob will override and set the voltage
+          if (knob_val != -1 && button_val) {
             // change the set voltage
             out->voltage_set = linlin(knob_val, 0.0f, 1023.0f,
                                       config->min_voltage, config->max_voltage);
@@ -888,6 +918,9 @@ int main() {
           out->adsr.release = roundf(config->release * 1000);
           out->voltage_set = linlin(ADSR_process(&out->adsr, ct), 0.0f, 1.0f,
                                     config->min_voltage, config->max_voltage);
+          out->voltage_current = out->voltage_set;
+          break;
+        case MODE_GATE:
           out->voltage_current = out->voltage_set;
           break;
         default:
