@@ -387,7 +387,13 @@ function new_env(code)
         end
     })
     local chunk = load(code, "chunk", "t", env)
-    chunk()
+    success = pcall(chunk)
+    if not success then
+        print("Error in environment block")
+        do
+            return
+        end
+    end
     return env
 end
 
@@ -396,54 +402,28 @@ for i = 1, 8 do
     table.insert(envs, new_env(""))
 end
 
-function update_env(i, code)
-    envs[i] = new_env([[
-gate_trigger = 0
-envelope_trigger = 0
+local baseline_code = [[
+volts = 0
+trigger = 0
 iteration_num = 0
-
-function gate(on) 
-    if on==true or on==nil then 
-        gate_trigger = 1 
+]]
+function update_env(i, code)
+    print("[globals.lua] updating env " .. i .. " with code: " .. code)
+    local new_env_made = new_env(baseline_code .. code)
+    if new_env_made then
+        envs[i] = new_env_made
     else
-        gate_trigger = 0
+        envs[i] = new_env(baseline_code)
     end
 end
 
-function trig()
-    envelope_trigger = 1 
-end
-
-function main_call(beat)
-    iteration_num = iteration_num + 1
-    local value = -15
-    if type(main) == "function" then
-        original = main(beat)
-        if original then
-            value = to_cv(original)
+function test_on_beat(i)
+    envs[i].iteration_num = envs[i].iteration_num + 1
+    if envs[i].on_beat then
+        local v = envs[i].on_beat(envs[i].iteration_num)
+        if v then
+            return string.format("%d) %f volts, %s, %s", envs[i].iteration_num, envs[i].volts, envs[i].trigger, v)
         end
-    end
-    local trigger = gate_trigger
-    if envelope_trigger == 1 then
-        trigger = 1
-        envelope_trigger = 0
-    end
-    return value, trigger, original
-end
-]] .. code)
-end
-
-function env_main(i, beat)
-    local v, t, _ = envs[i].main_call(beat)
-    return v, t
-end
-
-function test_env_main(i, beat)
-    local v, t, o = envs[i].main_call(beat)
-    if v >= -5 then
-        return envs[i].iteration_num .. ") " .. o .. string.format(", cv=%2.2f, env=", v) .. t
-    else
-        return string.format("%d) ", envs[i].iteration_num)
     end
 end
 
@@ -454,22 +434,26 @@ math.randomseed(os.time())
 -- a = S{60,62,S{70,75},67}
 -- b = S{1,1,1,0}
 -- c = S{10,13,15,S{17,20}}
--- function main(beat)
---     a:select(beat)
---     b:select(beat)
---     c:select(beat)
---     local u = a() + c()
---     -- gate(b()>0)
---     if (b()>0) then
---         trig()
---     end
---     -- trig()
---     if u~='skip' then 
---         do return u end 
+-- function on_beat(beat)
+--     local v = a() + b() + c()
+--     volts = to_cv(v)
+--     trigger = b()>0
+--     return v
+-- end
+
+-- local notes = S{"c4", "d4", "e4", "f4", "g4", "a4", "b4", "c5"}
+-- function on_button(value, shift)
+--     if value then 
+--         local note = notes()
+--         volts = to_cv(note)
+--         return note
 --     end
 -- end
 -- ]])
 
 -- for i = 1, 10 do
---     print(test_env_main(1, i))
+--     print(test_on_beat(1))
+-- end
+-- for i = 1, 10 do
+--     print(envs[1].on_button(1, 0), envs[1].volts)
 -- end

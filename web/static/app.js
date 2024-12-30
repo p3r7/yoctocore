@@ -143,33 +143,34 @@ function parseStructAndHashVariables(cCode) {
 
 // Example usage
 const cCode = `
+
 typedef struct Config {
-  uint8_t mode;
-  float min_voltage;
-  float max_voltage;
-  float slew_time;
-  float v_oct;
-  uint8_t root_note;
-  uint16_t quantization;
-  float portamento;
-  uint8_t midi_channel;
-  uint8_t midi_priority_channel;
-  uint8_t midi_cc;
-  float clock_tempo;
-  uint8_t clock_division;
-  float lfo_period;
-  float lfo_depth;
-  uint8_t lfo_waveform;
-  float attack;
-  float decay;
-  float sustain;
-  float release;
-  uint8_t linked_to;
-  uint8_t probability;
-  uint16_t code_len;
-  char *code;
-  uint8_t duration_percent;
-} Config;
+    uint8_t mode;
+    float min_voltage;
+    float max_voltage;
+    float slew_time;
+    float v_oct;
+    uint8_t root_note;
+    uint16_t quantization;
+    float portamento;
+    uint8_t midi_channel;
+    uint8_t midi_priority_channel;
+    uint8_t midi_cc;
+    float clock_tempo;
+    uint8_t clock_division;
+    float lfo_period;
+    float lfo_depth;
+    uint8_t lfo_waveform;
+    float attack;
+    float decay;
+    float sustain;
+    float release;
+    uint8_t linked_to;
+    uint8_t probability;
+    uint16_t code_len;
+    uint8_t note_tuning;
+    char *code;
+  } Config;
 
 `;
 
@@ -511,7 +512,7 @@ const app = createApp({
         const scenes = ref(
             Array.from({ length: 8 }, () => ({
                 outputs: Array.from({ length: 8 }, () => ({
-                    mode: 0,
+                    mode: 10,
                     quantization: 0,
                     v_oct: 1.0,
                     root_note: 60,
@@ -533,8 +534,9 @@ const app = createApp({
                     release: 2.1,
                     linked_to: 0,
                     probability: 100,
-                    code: `function main()
-	return 60
+                    note_tuning: 0,
+                    code: `function on_beat(beat)
+	return beat
 end`,
                     duration: 1,
                     setpoint_voltage: 0,
@@ -558,6 +560,7 @@ end`,
         const midi_input_active = ref({});
         const midi_input_last_message = ref({});
         const clockTempos = ref([]);
+        const luaBeatNumber = ref(0);
 
         const definitionsModes = ref({
             "MODE_NOTE": 0,
@@ -611,6 +614,7 @@ end`,
         let code_last = "";
         async function clearLua() {
             console.log(`[clearLua]`);
+            luaBeatNumber.value = 0;
             code_last = "Zzzz";
             // clear the output 
             outputCodeMirror.setValue(''); // Clear the CodeMirror output
@@ -624,7 +628,8 @@ end`,
                 outputCodeMirror.refresh();
             }, 50);
         }
-        async function executeLua() {
+        async function executeLua(function_name) {
+            console.log(`[executeLua]: ${function_name}`);
             // using https://github.com/Doridian/LuaJS
             let outputElement = document.getElementById('output');
             let code = myCodeMirror.getValue();
@@ -652,7 +657,11 @@ end`,
             luaState.then(async (L) => {
                 let value;
                 try {
-                    value = await L.run(`return test_env_main(${output_num})`); //value == [3]
+                    if (function_name == "on_beat") {
+                        value = await L.run(`return envs[${output_num}].${function_name}(${luaBeatNumber.value})`);
+                    } else {
+                        value = await L.run(`return envs[${output_num}].${function_name}()`);
+                    }
                 } catch (error) {
                     value = error;
                 }
@@ -660,8 +669,13 @@ end`,
                 await value;
                 // get the value
                 console.log(`[executeLua]: ${value}`);
+
+                // get the `volts` variable in the current environment
+                let volts = await L.run(`return envs[${output_num}].volts`);
+                // get the 'trigger' boolean 
+                let trigger = await L.run(`return envs[${output_num}].trigger`);
                 // append to output
-                outputCodeMirror.setValue(outputCodeMirror.getValue() + '\n' + value);
+                outputCodeMirror.setValue(outputCodeMirror.getValue() + `\nv=${volts}\tt=${trigger}\tr=${value}`);
             });
             // console.log(`[executeLua]: ${new_code}`);
             beautify_code = LuaFormatter.beautifyLua(code).trim();
@@ -984,6 +998,7 @@ end`,
             definitionsModes,
             toggleLearning,
             inLearningMode,
+            luaBeatNumber,
         };
     },
 });

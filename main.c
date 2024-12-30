@@ -239,6 +239,7 @@ void timer_callback_update_voltage(bool on, int user_data) {
 
 void timer_callback_blink(bool on, int user_data) { blink_on = on; }
 
+#ifdef INCLUDE_MIDI
 void midi_note_off(int channel, int note) {
   uint32_t ct = to_ms_since_boot(get_absolute_time());
   channel++;  // 1-indexed
@@ -371,7 +372,7 @@ void midi_cc(int channel, int cc, int value) {
             linlin(value, 0, 127, config->min_voltage, config->max_voltage);
         printf("[cc%d] %f\n", i + 1, out->voltage_current);
       } else if (button_values[i]) {
-        // listen and set the channel and cc
+        // listen and learn the channel and cc
         yocto.config[yocto.i][i].midi_channel = channel;
         yocto.config[yocto.i][i].midi_cc = cc;
         // save the config
@@ -387,11 +388,18 @@ void midi_key_pressure(int channel, int note, int pressure) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_KEY_PRESSURE && config->midi_channel == channel) {
-      // set the voltage
-      out->voltage_set =
-          linlin(pressure, 0, 127, config->min_voltage, config->max_voltage);
-      printf("[kp%d] %f\n", i + 1, out->voltage_current);
+    if (config->mode == MODE_KEY_PRESSURE) {
+      if (config->midi_channel == channel) {
+        // set the voltage
+        out->voltage_set =
+            linlin(pressure, 0, 127, config->min_voltage, config->max_voltage);
+        printf("[kp%d] %f\n", i + 1, out->voltage_current);
+      } else if (button_values[i]) {
+        // listen and learn the channel
+        yocto.config[yocto.i][i].midi_channel = channel;
+        // save the config
+        Yoctocore_schedule_save(&yocto);
+      }
     }
   }
 }
@@ -402,12 +410,18 @@ void midi_program_change(int channel, int program) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_PROGRAM_CHANGE &&
-        config->midi_channel == channel) {
-      // set the voltage
-      out->voltage_set =
-          linlin(program, 0, 127, config->min_voltage, config->max_voltage);
-      printf("[pc%d] %f\n", i + 1, out->voltage_current);
+    if (config->mode == MODE_PROGRAM_CHANGE) {
+      if (config->midi_channel == channel) {
+        // set the voltage
+        out->voltage_set =
+            linlin(program, 0, 127, config->min_voltage, config->max_voltage);
+        printf("[pc%d] %f\n", i + 1, out->voltage_current);
+      } else if (button_values[i]) {
+        // listen and learn the channel
+        yocto.config[yocto.i][i].midi_channel = channel;
+        // save the config
+        Yoctocore_schedule_save(&yocto);
+      }
     }
   }
 }
@@ -418,12 +432,18 @@ void midi_channel_pressure(int channel, int pressure) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_CHANNEL_PRESSURE &&
-        config->midi_channel == channel) {
-      // set the voltage
-      out->voltage_set =
-          linlin(pressure, 0, 127, config->min_voltage, config->max_voltage);
-      printf("[cp%d] %f\n", i + 1, out->voltage_current);
+    if (config->mode == MODE_CHANNEL_PRESSURE) {
+      if (config->midi_channel == channel) {
+        // set the voltage
+        out->voltage_set =
+            linlin(pressure, 0, 127, config->min_voltage, config->max_voltage);
+        printf("[cp%d] %f\n", i + 1, out->voltage_current);
+      } else if (button_values[i]) {
+        // listen and learn the channel
+        yocto.config[yocto.i][i].midi_channel = channel;
+        // save the config
+        Yoctocore_schedule_save(&yocto);
+      }
     }
   }
 }
@@ -435,11 +455,18 @@ void midi_pitch_bend(int channel, int value) {
   for (uint8_t i = 0; i < 8; i++) {
     Config *config = &yocto.config[yocto.i][i];
     Out *out = &yocto.out[i];
-    if (config->mode == MODE_PITCH_BEND && config->midi_channel == channel) {
-      // set the voltage
-      out->voltage_set =
-          linlin(value, 0, 16383, config->min_voltage, config->max_voltage);
-      printf("[pb%d] %f\n", i + 1, out->voltage_current);
+    if (config->mode == MODE_PITCH_BEND) {
+      if (config->midi_channel == channel) {
+        // set the voltage
+        out->voltage_set =
+            linlin(value, 0, 16383, config->min_voltage, config->max_voltage);
+        printf("[pb%d] %f\n", i + 1, out->voltage_current);
+      } else if (button_values[i]) {
+        // listen and learn the channel
+        yocto.config[yocto.i][i].midi_channel = channel;
+        // save the config
+        Yoctocore_schedule_save(&yocto);
+      }
     }
   }
 }
@@ -537,6 +564,7 @@ void midi_event_stop(char chan, char data1, char data2) {
   printf("midi_event_stop: %d %d %d\n", chan, data1, data2);
   midi_stop();
 }
+#endif
 
 int main() {
   // Set PLL_USB 96MHz
@@ -583,7 +611,6 @@ int main() {
 #ifdef INCLUDE_MIDI
   // setup midi
   tusb_init();
-#endif
 
   // setup libmidi
   midi_init();
@@ -602,6 +629,8 @@ int main() {
   midi_register_event_handler(EVT_SYS_REALTIME_SEQ_CONTINUE,
                               midi_event_continue);
   midi_register_event_handler(EVT_SYS_REALTIME_SEQ_STOP, midi_event_stop);
+
+#endif
 
   // setup pio for uart
   uint offset = pio_add_program(pio0, &uart_rx_program);
@@ -879,6 +908,9 @@ int main() {
           if (out->tuning) {
             out->voltage_current = 3.0;
           }
+          if (config->note_tuning > 0) {
+            out->voltage_current += ((float)config->note_tuning / 1000.0);
+          }
           break;
         case MODE_CONTROL_CHANGE:
         case MODE_KEY_PRESSURE:
@@ -901,16 +933,18 @@ int main() {
           break;
         case MODE_ENVELOPE:
           // mode envelope will trigger the envelope based on button press
-          // knob changes will scale the attack/release
           if (knob_val != -1) {
-            // scale the attack/release
-            float attack, release;
-            spiral_coordinate(knob_val, &attack, &release);
-            attack = linlin(attack, 0.0f, 1.0f, 10.0f, 1000.0f);
-            release = linlin(release, 0.0f, 1.0f, 10.0f, 5000.0f);
-            config->attack = roundf(attack);
-            config->release = roundf(release);
-            printf("Attack: %f, Release: %f\n", attack, release);
+            if (button_shift) {
+              // shift + knob will set the sustain
+              config->sustain = linlin(knob_val, 0.0f, 1023.0f, 0.0, 1.0);
+            } else if (button_val) {
+              // button + knob will set the release
+              config->release = linlin(knob_val, 0.0f, 1023.0f, 0.0, 10.0);
+            } else {
+              // knob will set the attack
+              config->attack = linlin(knob_val, 0.0f, 1023.0f, 0.0, 10.0);
+            }
+            Yoctocore_schedule_save(&yocto);
           }
           out->adsr.attack = roundf(config->attack * 1000);
           out->adsr.decay = roundf(config->decay * 1000);
